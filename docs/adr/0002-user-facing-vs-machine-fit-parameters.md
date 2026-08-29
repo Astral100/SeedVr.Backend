@@ -1,0 +1,3 @@
+# User-facing vs machine-fit parameter split
+
+The POC exposed a flat set of 11 parameters in five groups (Quality, Performance, MemoryFit, Output, ExperimentControl). The backend splits that surface: the API exposes only user-meaningful parameters (Quality, Output, seed), while machine-fit parameters (Performance, MemoryFit — batch size, blocks to swap, tiling, offload device) are chosen by the backend per worker GPU when it builds the run. Website users should not be sizing VRAM, and machine-fit values depend on which worker the job lands on, which the user cannot know. All parameters remain settable on the backend side; the workflow template still owns every default and null falls through (the POC's ADR 0001 rule, carried over).

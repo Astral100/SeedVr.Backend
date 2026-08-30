@@ -212,3 +212,7 @@ Caveats to carry into the design:
    behind our own interface keeps switching cost near zero. Wasabi is ruled out
    (90-day minimum duration vs our 30-day retention; egress fair-use line exactly at
    our profile). S3 is ruled out on egress cost (~7x total).
+
+## Addendum (2026-08-30): POC-measured output size contradicts the cost model
+
+The cost model above assumes each job writes input + ~3× output (2 GB in + 6 GB out). The POC's actual outputs (`videos/` in `Astral100/SeedVr`) measured **~1.0× input bytes** at the CRF 23 its runs effectively used: `[10s] cat finger shooting.mp4` 6,705,980 B in → 6,776,178 B out; the 1 s clip 881,706 B → 909,186 B. At that ratio the per-job write volume roughly halves and the ~$60/mo launch estimate is an overestimate. Caveats: PLAN.md milestone 8 makes CRF 16 the production default, which will inflate outputs again (unmeasured), and the POC clips are seconds long — re-measure with production-length clips at CRF 16 before sizing storage.

@@ -24,3 +24,14 @@ A named, versioned parameter set defined and served by the backend. The frontend
 
 **Effective parameter set**:
 The values a run actually used after the workflow template, request parameters (raw or preset-resolved) and any overrides are layered; recorded with the job.
+
+### Workers
+
+**Worker**:
+A GPU instance recruited from the Vast.ai marketplace that processes exactly one job at a time; the number of ready workers is the number of jobs that can run in parallel.
+
+**Warm floor**:
+The minimum number of fully provisioned, ready workers kept rented even while idle so a job starts without provisioning delay; a replacement is recruited as soon as a warm worker takes a job.
+
+**Dispatcher**:
+The seam through which a job reaches GPU capacity. Exactly one dispatcher is active; implementations (serverless endpoint, self-managed pool) are interchangeable behind it because the job contract is identical.

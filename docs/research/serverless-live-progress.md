@@ -81,3 +81,7 @@ Cadence realities, from `_ws_listen_loop`/`_update_progress` (§3):
 - Terminal detection is robust independently of progress: webhook (§4) + S3 objects remain the durable completion signal (vastai-serverless.md §6).
 
 Therefore T must be phase-aware (generous during `generating` before first `progress` event and during postprocess, tight during stepped sampling), or the push hook (option 2) should add its own fixed-interval heartbeat (e.g. repost last-known state every 15 s from a timer in the wrapper) so the backend's stall detector can be a single simple timeout. The latter is a ~10-line addition inside the same fork and is the recommended companion to option 2.
+
+## 7. Corroboration from the POC's pinned wrapper contract
+
+The POC repo's own capture of the wrapper API (`docs/comfyui-wrapper-openapi.json` in `Astral100/SeedVr`) documents `POST /generate/stream` — "Submit a request and stream status updates until completion" — taking the same `Payload` schema (`input.request_id`, `workflow_json`, `s3`, `webhook`) as `/generate/sync`, alongside `GET /result/{request_id}`, `POST /cancel/{request_id}` and `GET /queue-info`. This is first-hand confirmation, from the exact wrapper build the POC ran against, that the SSE stream route of option 1 is present in our deployed wrapper version, not only in ai-dock's current source. The OpenAPI response schema for the stream is FastAPI's generic `{}` — the event format is not captured there; the event details in §3 come from the wrapper source.

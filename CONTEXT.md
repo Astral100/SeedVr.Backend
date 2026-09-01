@@ -15,7 +15,7 @@ The coarse, user-facing enum derived from the job state by a single pure mapping
 ### Files
 
 **Job file**:
-A stored media file attached to a job — an input or an output — recorded as a row in its own table (`job_files`): storage key, size, probe metadata (duration, resolution, codec…), content hash, and per-file lifecycle stamps (expiry, deletion). Job files can expire and be deleted from storage while the job record lives on. Supersedes the POC meaning of "job file" (the JSON job definition loaded by the console app), which does not exist in the backend.
+A stored media file attached to a job — an input or an output — recorded as a row in its own table (`job_files`): storage key, size, probe metadata (duration, resolution, codec…), and per-file lifecycle stamps (expiry, deletion). Job files can expire and be deleted from storage while the job record lives on. Supersedes the POC meaning of "job file" (the JSON job definition loaded by the console app), which does not exist in the backend.
 
 ### Parameters
 

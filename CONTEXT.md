@@ -28,6 +28,11 @@ A named, versioned parameter set defined and served by the backend. The frontend
 **Effective parameter set**:
 The values a run actually used after the workflow template, request parameters (raw or preset-resolved) and any overrides are layered; recorded with the job.
 
+### Services
+
+**Core services**:
+The always-on backend deployable — the API plus its background services (dispatcher, recovery checks, periodic deletion pass) — together with its PostgreSQL database. The core services decide and coordinate everything but never handle video bytes, which flow directly between users, object storage, and workers. Everything GPU-side (worker, worker agent, ComfyUI) and the object storage itself are outside them.
+
 ### Workers
 
 **Worker**:

@@ -1,6 +1,6 @@
-# Control-plane hosting price re-verification (September 2026)
+# Core-services hosting price re-verification (September 2026)
 
-Follow-up to [control-plane-hosting.md](control-plane-hosting.md). Prices re-verified 2026-09-01 against primary sources (vendor pricing pages/docs; Azure via the official Retail Prices API, https://prices.azure.com/api/retail/prices, because azure.com pricing pages render "$-" without JS). Adds vendors and SKUs the original survey did not cover: Hostinger, Azure VMs, App Service Premium tiers, and post-repricing Render/Fly numbers.
+Follow-up to [core-services-hosting.md](core-services-hosting.md). Prices re-verified 2026-09-01 against primary sources (vendor pricing pages/docs; Azure via the official Retail Prices API, https://prices.azure.com/api/retail/prices, because azure.com pricing pages render "$-" without JS). Adds vendors and SKUs the original survey did not cover: Hostinger, Azure VMs, App Service Premium tiers, and post-repricing Render/Fly numbers.
 
 **Region note**: Azure figures here are **West Europe**; the original survey used East US. Some meters differ by region (ACA requests $0.56/M vs $0.40/M; Log Analytics $2.99/GB vs $2.30/GB).
 
@@ -123,6 +123,6 @@ Machines: shared-cpu-1x/2 GB $11.11, shared-cpu-2x/2 GB $11.83 (US regions; regi
 1. **Corrections to the original survey**: ACA "~$16–70 (typ. $30–50)" understates always-active billing ($103/mo at 1 vCPU/2 GiB; only ~$29 if idle-billed) — the idle/active mix must be measured empirically. Render "~$21–25" predates April 2026 repricing; realistic is $53–78.
 2. **The managed premium decomposes into two purchases**: vendor premium (Hetzner box → same-spec Azure VM: ~4×, ~€13 vs ~$45) and runtime-management premium (Azure VM → App Service/ACA: another 1.5–3×). They can be bought independently.
 3. **Hybrid rung worth noting**: Azure VM B1ms + Flexible Server ≈ **$45/mo** = managed PITR Postgres (the part that matters most) + flat-billed SSH-able compute.
-4. **RAM economics explain the VPS/PaaS gap at 8 GB**: on a VPS, RAM is nearly free and is shared with co-located Postgres (page cache); PaaS meters RAM as the expensive axis and sells DB RAM separately. The app tier itself needs only 1–2 GB (async ASP.NET Core control plane, no video bytes in-process).
+4. **RAM economics explain the VPS/PaaS gap at 8 GB**: on a VPS, RAM is nearly free and is shared with co-located Postgres (page cache); PaaS meters RAM as the expensive axis and sells DB RAM separately. The app tier itself needs only 1–2 GB (the core services: async ASP.NET Core, no video bytes in-process).
 5. **Deploy-blip pricing interaction**: zero-downtime tiers (Render, App Service Premium) largely charge for surviving deploys. Durable job dispatch (jobs table with `FOR UPDATE SKIP LOCKED`, worker retry-with-backoff) makes brief deploy blips harmless, which unlocks the cheaper rungs (plain VM, App Service Basic, Hetzner) without violating the missed-webhook constraint.
 6. **Cost gap in context**: unmanaged ~$12–15/mo vs managed ~$45–90/mo ⇒ ~$500–1,000/yr, against $5.4–10.8k/yr warm GPU spend — clearly secondary, but no longer pure noise as the original ($9–50/mo spread) framing suggested.

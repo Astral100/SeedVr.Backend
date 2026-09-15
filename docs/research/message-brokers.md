@@ -1,6 +1,6 @@
-# Message brokers for job dispatch — feature comparison for the SeedVr control plane
+# Message brokers for job dispatch — feature comparison for the SeedVr core services
 
-Research for the wayfinder planning effort. All claims cite primary sources: official docs, vendor pricing pages (Azure via the Retail Prices API, since azure.com pages render "$-" without JS), and first-party GitHub repos. Researched 2026-09-05. Hosting-shape prices cross-check [control-plane-hosting-prices-2026-09.md](control-plane-hosting-prices-2026-09.md).
+Research for the wayfinder planning effort. All claims cite primary sources: official docs, vendor pricing pages (Azure via the Retail Prices API, since azure.com pages render "$-" without JS), and first-party GitHub repos. Researched 2026-09-05. Hosting-shape prices cross-check [core-services-hosting-prices-2026-09.md](core-services-hosting-prices-2026-09.md).
 
 **Verdict: at this scale (tens of messages/minute, one internal consumer) every candidate is technically sufficient, so the decision is ops footprint + delayed-delivery support + .NET client + hosting fit.** Three candidates separate from the pack: **NATS + JetStream** (single ~15 MB-RAM binary that fits every hosting shape incl. the Hetzner VPS, native delayed scheduling since server 2.12, first-party .NET client, Apache-2.0 with the 2025 license dispute settled in the community's favor); **Azure Service Bus Standard** (~$10/mo, zero ops, the richest native job-queue semantics — scheduled messages, DLQ, TTL — and a first-party .NET SDK; usable from any host over AMQP but only *natural* if the ACA hosting option wins); and **RabbitMQ on CloudAMQP's free shared tier** (most mature queueing semantics, but its open-source delayed-message story regressed in 2025 and self-hosting it is the heaviest of the three). Kafka/Redpanda are disqualified on footprint. Redis Streams works but makes you build delay/DLQ/retry yourself — at which point Postgres `SKIP LOCKED` (§11) does the same job with one fewer service. Ranked shortlist in §13.
 
@@ -95,7 +95,7 @@ Research for the wayfinder planning effort. All claims cite primary sources: off
 
 ## 10. What each broker looks like on each hosting shape
 
-The hosting decision (parallel ticket) is between Azure Container Apps + Flexible Server, Render, and Hetzner VPS + Coolify. Broker cost and shape per combination, using the compute prices verified in [control-plane-hosting-prices-2026-09.md](control-plane-hosting-prices-2026-09.md) and the broker prices cited above:
+The hosting decision (parallel ticket) is between Azure Container Apps + Flexible Server, Render, and Hetzner VPS + Coolify. Broker cost and shape per combination, using the compute prices verified in [core-services-hosting-prices-2026-09.md](core-services-hosting-prices-2026-09.md) and the broker prices cited above:
 
 | Broker | ACA + Azure | Render | Hetzner VPS + Coolify |
 |---|---|---|---|
@@ -112,7 +112,7 @@ Pattern: on Hetzner, self-hosted NATS is effectively free; on Render, every self
 The team is moving away from Postgres-backed dispatch, but it must be weighed honestly since Postgres stays regardless as the system of record.
 
 - `SELECT … FOR UPDATE SKIP LOCKED` is the documented primitive: "any selected rows that cannot be immediately locked are skipped" — exactly a multi-worker job-claim without lock contention ( https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE ). Delayed retry is a `next_attempt_at` column; DLQ is a status value; TTL is a `DELETE`.
-- At tens of jobs/minute, a 1–5 s poll is unmeasurable load, and the sibling hosting research already noted a `SKIP LOCKED` jobs table makes deploy blips harmless (control-plane-hosting-prices-2026-09.md, observation 5).
+- At tens of jobs/minute, a 1–5 s poll is unmeasurable load, and the sibling hosting research already noted a `SKIP LOCKED` jobs table makes deploy blips harmless (core-services-hosting-prices-2026-09.md, observation 5).
 
 - **What a broker adds**: push/long-poll wakeups instead of poll loops; ack/redelivery/backoff/DLQ as configuration instead of code we test ourselves; clean separation if a second consumer process ever appears; per-broker extras (NATS request-reply, ASB scheduled messages).
 - **What a broker costs here**: a second stateful service to run, secure, monitor, and upgrade — and the **dual-write problem**: job state lives in Postgres, so "commit `JobState` change + publish dispatch message" spans two systems that cannot share a transaction.

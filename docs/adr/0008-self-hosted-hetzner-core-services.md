@@ -10,7 +10,7 @@ Binding conditions, design requirements rather than suggestions:
 - **Automated OS security patching** on every internet-facing host (unattended-upgrades); pinned versions and infrequent upgrade sprints are fine for everything else.
 - **Alerting that pages the operator.**
 
-Consequences: the operator is on call (failures cost labor rather than the managed rung's helpless waiting — hyperscalers fail for hours too); the region is Hetzner's DE/FI datacenters, fine for EU-based first users; Supabase has no role as a Postgres host (its PITR is a $100/mo add-on; the auth ticket remains free to pick any identity provider); deploy-blip tolerance is moot since candidate stacks include rolling updates. The runtime stack (K3s + Helm + CloudNativePG vs plain Docker Compose + pgBackRest), edge posture, and machine/datacenter choice are decided in their own ticket.
+Consequences: the operator is on call (failures cost labor rather than the managed rung's helpless waiting — hyperscalers fail for hours too); the region is Hetzner's DE/FI datacenters, fine for EU-based first users; Supabase has no role as a Postgres host (its PITR is a $100/mo add-on; the auth ticket remains free to pick any identity provider); deploy-blip tolerance is moot since candidate stacks include rolling updates. The runtime stack (K3s + Helm + CloudNativePG vs plain Docker Compose + pgBackRest), edge posture, and machine/datacenter choice are decided in the remainder of the hosting ticket.
 
 ## Considered Options
 

@@ -35,3 +35,12 @@ The minimum number of fully provisioned, ready workers kept rented even while id
 
 **Dispatcher**:
 The seam through which a job reaches GPU capacity. Exactly one dispatcher is active; implementations (serverless endpoint, self-managed pool) are interchangeable behind it because the job contract is identical.
+
+**Attempt**:
+One delivery of a job to a worker. A job may take several attempts before it succeeds or is abandoned; each attempt has its own identity, and anything a worker reports is tied to the attempt that produced it, so a superseded attempt can never speak for the current one.
+
+**Worker agent**:
+The program of ours bundled into the worker image alongside ComfyUI and the wrapper. It is the worker's voice: it reports heartbeats, progress and completion back to the backend, and uploads the finished output to storage.
+
+**Heartbeat**:
+The worker agent's periodic "still alive" signal, sent independently of job progress. Heartbeat silence — not progress silence — is what marks a worker as stalled; a job may legitimately report no progress for long stretches while heartbeats continue.

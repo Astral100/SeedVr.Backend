@@ -33,6 +33,9 @@ The values a run actually used after the workflow template, request parameters (
 **Core services**:
 The always-on backend deployable — the API plus its background services (dispatcher, recovery checks, periodic deletion pass) — together with its PostgreSQL database. The core services decide and coordinate everything but never handle video bytes, which flow directly between users, object storage, and workers. Everything GPU-side (worker, worker agent, ComfyUI) and the object storage itself are outside them.
 
+**Telemetry box**:
+The dedicated server that receives and stores the system's logs and metrics and raises alerts from them. Core services and workers push telemetry to it; it holds no product data, so losing it loses monitoring history but nothing a user owns. It runs nothing besides the observability stack.
+
 ### Workers
 
 **Worker**:
@@ -48,7 +51,7 @@ The seam through which a job reaches GPU capacity. Exactly one dispatcher is act
 One delivery of a job to a worker. A job may take several attempts before it succeeds or is abandoned; each attempt has its own identity, and anything a worker reports is tied to the attempt that produced it, so a superseded attempt can never speak for the current one.
 
 **Worker agent**:
-The program of ours bundled into the worker image alongside ComfyUI and the wrapper. It is the worker's voice: it reports heartbeats, progress and completion back to the backend, and uploads the finished output to storage.
+The program of ours bundled into the worker image alongside ComfyUI and the wrapper. It is the worker's voice: it reports heartbeats, progress and completion back to the backend, uploads the finished output to storage, and streams the worker's logs to the telemetry box.
 
 **Heartbeat**:
 The worker agent's periodic "still alive" signal, sent independently of job progress. Heartbeat silence — not progress silence — is what marks a worker as stalled; a job may legitimately report no progress for long stretches while heartbeats continue. Silence only counts while the backend was listening: the stall clock runs from the later of the last heard heartbeat and the moment the backend started listening.

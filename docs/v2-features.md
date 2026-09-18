@@ -4,7 +4,7 @@ Useful features consciously deferred out of v1. Each entry names the feature, wh
 
 ## Per-attempt raw log archive in R2
 
-At attempt end the worker agent zips the raw log files (ComfyUI, wrapper, agent) and uploads the zip to R2 via one more presigned PUT carried in the dispatch payload — the same mechanism as the output upload. Earns a place by making log history durable and system-neutral: the zip survives telemetry-box loss, outlives the retention window, and re-loads into any future log store. V1 relies on the live attempt-tagged log stream alone (12-month retention on the unbacked-up telemetry box, per ADR 0010) — declined as premature durability at launch scale.
+At attempt end the worker agent zips the raw log files (ComfyUI, wrapper, agent) and uploads the zip to R2 via one more presigned PUT carried in the dispatch payload — the same mechanism as the output upload. Earns a place by making log history durable and system-neutral: the zip survives telemetry-box loss, outlives the retention window, and re-loads into any future log store. V1 relies on the live attempt-tagged log stream alone (12-month retention on the unbacked-up telemetry box, per ADR 0011) — declined as premature durability at launch scale.
 
 ## Multipart / resumable browser uploads
 

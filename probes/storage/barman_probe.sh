@@ -18,8 +18,11 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$DIR/out"
 
 # probe.env is data, not shell — AUTH_TOKEN may hold arbitrary characters,
-# so parse the four keys we need instead of sourcing the file.
-getval() { grep -E "^$1=" "$DIR/probe.env" | tail -n1 | cut -d= -f2-; }
+# so parse the four keys we need instead of sourcing the file. The || true
+# keeps a no-match grep from killing the script under pipefail before the
+# friendly "missing" messages below can fire.
+[[ -f "$DIR/probe.env" ]] || { echo "probe.env not found — run wizard.sh stages 2-3 first"; exit 1; }
+getval() { { grep -E "^$1=" "$DIR/probe.env" 2>/dev/null || true; } | tail -n1 | cut -d= -f2-; }
 R2_ACCOUNT_ID="$(getval R2_ACCOUNT_ID)"
 R2_BUCKET="$(getval R2_BUCKET)"
 R2_ACCESS_KEY_ID="$(getval R2_ACCESS_KEY_ID)"
@@ -59,7 +62,7 @@ CONF
     run_pg "psql -c \"SELECT pg_switch_wal(); CHECKPOINT;\""
     ARCH=0
     for i in $(seq 1 12); do
-      run_pg "psql -At -c \"SELECT archived_count, coalesce(last_archived_wal,'\'''\''), coalesce(last_failed_wal,'\''<none>'\'') FROM pg_stat_archiver;\"" > /tmp/archiver.txt
+      run_pg "psql -At -c \"SELECT archived_count, coalesce(last_archived_wal,'\'''\''), coalesce(last_failed_wal,'\''<none>'\'') FROM pg_stat_archiver;\"" > /tmp/archiver.txt 2>/dev/null || true
       cat /tmp/archiver.txt
       ARCH=$(cut -d"|" -f1 /tmp/archiver.txt)
       ARCH="${ARCH//[^0-9]/}"; ARCH="${ARCH:-0}"

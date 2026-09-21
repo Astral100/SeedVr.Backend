@@ -209,7 +209,14 @@ LAST_DONE=0
 [[ "$LAST_DONE" =~ ^[0-9]+$ ]] || LAST_DONE=0
 START_AT=1
 case "${1:-}" in
-  --from=*) START_AT="${1#--from=}" ;;
+  --from=*)
+    START_AT="${1#--from=}"
+    if [[ ! "$START_AT" =~ ^[0-9]+$ ]]; then
+      echo "invalid --from value '$START_AT' — need a stage number 1-$TOTAL_STAGES" >&2
+      exit 64
+    fi
+    START_AT=$((10#$START_AT))   # 08/09 would otherwise parse as bad octal
+    ;;
   --fresh)  LAST_DONE=0; printf '0\n' > "$PROGRESS_FILE" ;;
 esac
 
@@ -229,12 +236,16 @@ trap 'exit 130' INT TERM
 
 # try CMD... — run a probe step; on failure offer retry / skip / abort
 # instead of letting set -e kill the wizard (and its teardown reminder).
+# A skip sets TRY_SKIPPED so run_stage leaves the stage uncheckpointed —
+# its outputs are missing, so a resume must redo it, not sail past it.
+TRY_SKIPPED=0
 try() {
   while ! "$@"; do
     warn "step failed: $*"
     if confirm "Retry it?"; then continue; fi
     if confirm "Skip it and carry on with the wizard?"; then
       SKIPPED+=("failed step: $*")
+      TRY_SKIPPED=1
       return 0
     fi
     exit 1
@@ -251,9 +262,15 @@ run_stage() {
     return 0
   fi
   stage "$title" "$mins"
+  TRY_SKIPPED=0
   "$fn"
-  LAST_DONE="$n"
-  printf '%s\n' "$n" > "$PROGRESS_FILE"
+  if (( TRY_SKIPPED )); then
+    warn "a step in this stage was skipped after failing — the stage is NOT"
+    warn "checkpointed, so resuming the wizard will redo it."
+  else
+    LAST_DONE="$n"
+    printf '%s\n' "$n" > "$PROGRESS_FILE"
+  fi
 }
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
@@ -309,6 +326,10 @@ stage_r2_token() {
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
 stage_vast_instance() {
+  # Set the flag before the rental instructions, not after the prompts:
+  # the instance starts billing mid-stage, and an interrupt while copying
+  # values back must still trigger the exit trap's billing warning.
+  INSTANCE_LIVE=1
   say "Rent ONE On-Demand instance from your SeedVR2 template, in a NON-US"
   say "region — the ticket wants upload throughput measured from one."
   open_url "https://cloud.vast.ai/"
@@ -324,7 +345,6 @@ stage_vast_instance() {
   ask_secret AUTH_TOKEN "WEB_PASSWORD of the instance:"
   write_env WRAPPER_URL "$WRAPPER_URL"
   write_env AUTH_TOKEN "$AUTH_TOKEN"
-  INSTANCE_LIVE=1
   warn "The instance bills until you destroy it (stage 10)."
 }
 
@@ -351,9 +371,17 @@ stage_run_job() {
   say "Submitting the wrapper job — the video input is a presigned R2 GET URL"
   say "inside workflow_json (the first thing this probe verifies). Progress"
   say "then streams below; a 10s clip took ~12 min on the POC's reference GPU."
-  warn "If this fails, prefer Skip over Retry — a retry resubmits the same"
-  warn "job id and could start a second GPU run."
-  try "$PY" "$DIR/driver.py" submit
+  # No try() here: a retry would re-POST /generate and could start a second
+  # GPU job. On failure the stage still checkpoints (deliberately, unlike
+  # try()-skips): redoing THIS stage on resume is the dangerous direction —
+  # 'collect' may still succeed, and --from=7 re-runs it on purpose.
+  if ! "$PY" "$DIR/driver.py" submit; then
+    warn "submit/watch failed. No retry is offered — re-running submit could"
+    warn "start a second GPU job. Check the instance's Jupyter terminal: if"
+    warn "the job is actually running or done, 'collect' may still succeed."
+    if ! confirm "Carry on with the wizard?"; then exit 1; fi
+    SKIPPED+=("driver.py submit (failed — verify the job on the instance)")
+  fi
   say ""
   step "Meanwhile the Jupyter terminal shows the on-instance probe: WebSocket"
   step "watch, relay POSTs, local_path pickup, and the two presigned PUTs"

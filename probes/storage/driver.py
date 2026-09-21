@@ -30,8 +30,16 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 STATE = OUT / "state.json"
-PRESIGN_SECONDS = 24 * 3600
+PRESIGN_SECONDS = 6 * 24 * 3600  # under R2's 7-day presign cap
 SYNTHETIC_MB = 300
+
+
+def check_presigns_fresh(state):
+    age = time.time() - state.get("prepared_at", 0)
+    if age > PRESIGN_SECONDS - 3600:
+        sys.exit("the presigned URLs from 'prepare' are older than ~6 days "
+                 "and have expired — re-run the wizard from stage 6 "
+                 "(wizard.sh --from=6) to re-prepare before continuing.")
 
 
 def now():
@@ -145,6 +153,7 @@ def cmd_prepare(env):
 
     state = {
         "job_id": job_id, "file_id": file_id, "request_id": request_id,
+        "prepared_at": time.time(),
         "keys": keys,
         "input_get_url": presign(s3, bucket, "GET", input_key),
         "log_get_url": presign(s3, bucket, "GET", keys["log"]),
@@ -163,6 +172,7 @@ def cmd_prepare(env):
 
 def cmd_submit(env):
     state = json.loads(STATE.read_text())
+    check_presigns_fresh(state)
     workflow = json.loads((HERE / "SeedVR2_HD_video_upscale_api.json").read_text())
     # The probe itself: a presigned R2 GET URL as the LoadVideo input. The
     # wrapper is documented to download URL-looking inputs into ComfyUI's
@@ -217,6 +227,7 @@ def cmd_submit(env):
 
 def cmd_collect(env):
     state = json.loads(STATE.read_text())
+    check_presigns_fresh(state)
     s3 = s3_client(env)
     bucket = env["R2_BUCKET"]
 

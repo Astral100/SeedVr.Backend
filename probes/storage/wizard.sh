@@ -293,6 +293,9 @@ run_stage() {
       warn "checkpoint advanced past an earlier skipped stage: a real GPU job"
       warn "was submitted, and a resume must never resubmit it. The skipped"
       warn "stage(s) stay in the closing summary — redo them via --from=N."
+      # The resume point has deliberately moved past the gap, so later
+      # stages checkpoint normally again (a new skip re-latches).
+      CHECKPOINT_LATCHED=0
     fi
     LAST_DONE="$n"
     printf '%s\n' "$n" > "$PROGRESS_FILE"

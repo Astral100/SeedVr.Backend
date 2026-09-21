@@ -117,6 +117,27 @@ def cmd_check(env):
 
 def cmd_prepare(env):
     OUT.mkdir(exist_ok=True)
+    # Clear old state FIRST: a partway-failed prepare must leave nothing a
+    # later submit could mistake for freshly prepared. A state already
+    # marked submitted may belong to a job still running on the instance,
+    # so discarding it demands an explicit yes.
+    if STATE.exists():
+        old = json.loads(STATE.read_text())
+        if old.get("submitted_at"):
+            print(f"WARNING: the previously prepared job (request_id "
+                  f"{old['request_id']}) was submitted at "
+                  f"{old['submitted_at']} and may still be running on the "
+                  "instance. Re-preparing discards its tracking here; its "
+                  "output stays in R2 under the old keys but 'collect' will "
+                  "no longer find it.")
+            try:
+                answer = input("Type 'yes' to discard it and prepare a "
+                               "fresh job: ")
+            except EOFError:
+                answer = ""
+            if answer.strip() != "yes":
+                sys.exit("aborted — the old state was kept")
+        STATE.unlink()
     s3 = s3_client(env)
     bucket = env["R2_BUCKET"]
     job_id = f"probe-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
@@ -171,7 +192,16 @@ def cmd_prepare(env):
 
 
 def cmd_submit(env):
+    if not STATE.exists():
+        sys.exit("out/state.json missing — 'prepare' (stage 6) did not "
+                 "complete; re-run it before submitting.")
     state = json.loads(STATE.read_text())
+    if state.get("submitted_at"):
+        sys.exit(f"this prepared job (request_id {state['request_id']}) was "
+                 f"already submitted at {state['submitted_at']} — submitting "
+                 "again would start a second GPU job under the same id. Run "
+                 "'collect' for its results, or re-run stage 6 "
+                 "(wizard.sh --from=6) to prepare a fresh job.")
     check_presigns_fresh(state)
     workflow = json.loads((HERE / "SeedVR2_HD_video_upscale_api.json").read_text())
     # The probe itself: a presigned R2 GET URL as the LoadVideo input. The
@@ -191,6 +221,10 @@ def cmd_submit(env):
     print(f"[{now()}] POST /generate → HTTP {status}: {body[:300]!r}")
     if status >= 400:
         sys.exit("submit failed")
+    # Stamp BEFORE polling: from this moment a real GPU job exists, and any
+    # later submit against this state must refuse (see the guard above).
+    state["submitted_at"] = now()
+    STATE.write_text(json.dumps(state, indent=2))
 
     timeline = [{"t": now(), "event": "submitted", "http": status}]
     last_msg = None
@@ -226,6 +260,9 @@ def cmd_submit(env):
 
 
 def cmd_collect(env):
+    if not STATE.exists():
+        sys.exit("out/state.json missing — nothing has been prepared or "
+                 "submitted, so there is nothing to collect.")
     state = json.loads(STATE.read_text())
     s3 = s3_client(env)
     bucket = env["R2_BUCKET"]

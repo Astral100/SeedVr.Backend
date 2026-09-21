@@ -30,6 +30,15 @@ non-US Vast.ai instance from the SeedVR2 template, arming the on-instance
 probe (one line pasted into a Jupyter terminal), the run itself, result
 collection, the WAL probe, and teardown. About 75 minutes, most of it waiting.
 
+It is safe to stop at any point (Ctrl-C, a crash, or a failed step): every
+completed stage is checkpointed in `out/wizard-progress`, captured values are
+kept in `probe.env`, and the next run offers to resume from the stage after
+the last completed one. `--from=N` forces a starting stage, `--fresh`
+discards recorded progress. A failed step offers retry / skip / abort rather
+than killing the run, and any exit while the GPU instance may still be rented
+prints a destroy-the-instance reminder. The WAL probe is standalone and can
+be (re-)run on its own: `bash probes/storage/barman_probe.sh`.
+
 ## Pieces
 
 - `wizard.sh` — the interactive walkthrough (generated from the /wizard skill).

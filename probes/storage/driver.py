@@ -184,7 +184,16 @@ def cmd_submit(env):
 
     timeline = [{"t": now(), "event": "submitted", "http": status}]
     last_msg = None
+    deadline = time.monotonic() + 2 * 3600
     while True:
+        if time.monotonic() > deadline:
+            (OUT / "driver-result.json").write_text(json.dumps(
+                {"timeline": timeline, "final": None, "timed_out_after": "2h"},
+                indent=2))
+            sys.exit("gave up waiting after 2h — the job may still be running "
+                     "on the instance; check the Jupyter terminal, then run "
+                     "'collect'. Do NOT re-run 'submit': it would start a "
+                     "second GPU job under the same request id.")
         time.sleep(5)
         status, body = http("GET", f"{base}/result/{state['request_id']}",
                             headers=auth, timeout=30)

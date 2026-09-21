@@ -169,7 +169,7 @@ set_var() {
     fi
   fi
   SKIPPED+=("GitHub variable $name")
-  warn "skipped GitHub variable $name — gh not ready; set it later"
+  warn "skipped GitHub variable $name"
 }
 
 # finish — clear, then a closing summary of everything configured.
@@ -187,7 +187,6 @@ finish() {
 
 # ──────────────────────────────────────────────────────────────────────────
 # STAGES — author this section. One stage() per step the human takes.
-# Replace the example below. Set the two totals to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
 TOTAL_STAGES=10
@@ -196,134 +195,232 @@ TOTAL_MINUTES=75
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$DIR/probe.env"
 PY="$DIR/.venv/bin/python"
+PROGRESS_FILE="$DIR/out/wizard-progress"
+mkdir -p "$DIR/out"
+
+# ── Resume + safety plumbing ──────────────────────────────────────────────
+# Progress is checkpointed per stage in $PROGRESS_FILE, so a crash, Ctrl-C or
+# plain exit is never lost: the next run offers to resume from the stage after
+# the last one that completed. Flags: --from=N forces a starting stage,
+# --fresh discards recorded progress.
+
+LAST_DONE=0
+[[ -f "$PROGRESS_FILE" ]] && LAST_DONE="$(cat "$PROGRESS_FILE" 2>/dev/null || echo 0)"
+[[ "$LAST_DONE" =~ ^[0-9]+$ ]] || LAST_DONE=0
+START_AT=1
+case "${1:-}" in
+  --from=*) START_AT="${1#--from=}" ;;
+  --fresh)  LAST_DONE=0; printf '0\n' > "$PROGRESS_FILE" ;;
+esac
+
+INSTANCE_LIVE=0
+_on_exit() {
+  if (( INSTANCE_LIVE )); then
+    printf '\n'
+    warn "The Vast.ai probe instance may STILL BE RUNNING AND BILLING."
+    warn "Destroy it at https://cloud.vast.ai/instances/ when you're done."
+  fi
+  if (( LAST_DONE > 0 && LAST_DONE < TOTAL_STAGES )); then
+    note "Progress saved (stage $LAST_DONE done). Re-run wizard.sh to resume from stage $((LAST_DONE + 1))."
+  fi
+}
+trap _on_exit EXIT
+trap 'exit 130' INT TERM
+
+# try CMD... — run a probe step; on failure offer retry / skip / abort
+# instead of letting set -e kill the wizard (and its teardown reminder).
+try() {
+  while ! "$@"; do
+    warn "step failed: $*"
+    if confirm "Retry it?"; then continue; fi
+    if confirm "Skip it and carry on with the wizard?"; then
+      SKIPPED+=("failed step: $*")
+      return 0
+    fi
+    exit 1
+  done
+}
+
+# run_stage N "Title" MINUTES FN — run one stage, or skip it silently when
+# resuming past it. Records the checkpoint after FN succeeds.
+run_stage() {
+  local n="$1" title="$2" mins="$3" fn="$4"
+  if (( n < START_AT )); then
+    _STAGE_INDEX=$((_STAGE_INDEX + 1))
+    _MINUTES_ELAPSED=$((_MINUTES_ELAPSED + mins))
+    return 0
+  fi
+  stage "$title" "$mins"
+  "$fn"
+  LAST_DONE="$n"
+  printf '%s\n' "$n" > "$PROGRESS_FILE"
+}
+
+# ── 1 ─────────────────────────────────────────────────────────────────────
+stage_tooling() {
+  say "Setting up a Python venv with boto3 (used only on THIS machine to"
+  say "presign R2 URLs — the worker never sees credentials, per ADR 0005)."
+  if [[ ! -x "$PY" ]]; then
+    try python3 -m venv "$DIR/.venv"
+    try "$DIR/.venv/bin/pip" -q install boto3
+  fi
+  say "venv ready: $PY"
+  if docker info >/dev/null 2>&1; then
+    say "Docker is running — good, the WAL probe (stage 9) needs it."
+  else
+    warn "Docker isn't running. Start Docker Desktop before stage 9 (WAL probe)."
+  fi
+  pause
+}
+
+# ── 2 ─────────────────────────────────────────────────────────────────────
+stage_r2_bucket() {
+  say "Create a throwaway probe bucket (separate from any future prod bucket)."
+  open_url "https://dash.cloudflare.com/?to=/:account/r2/overview"
+  step "If R2 isn't enabled yet, enable it (needs a payment method; the free"
+  step "tier covers this probe: 10 GB storage, no egress fees)."
+  step "Create a bucket named e.g. 'seedvr-probe'. Leave location on"
+  step "'Automatic' — that is what production will use (ADR 0004)."
+  ask R2_BUCKET "Bucket name you created:"
+  step "Copy your Account ID: it's in the R2 overview page's right sidebar"
+  step "(also in the dashboard URL after dash.cloudflare.com/)."
+  ask R2_ACCOUNT_ID "Cloudflare Account ID:"
+  write_env R2_BUCKET "$R2_BUCKET"
+  write_env R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
+}
+
+# ── 3 ─────────────────────────────────────────────────────────────────────
+stage_r2_token() {
+  say "Create S3-compatible credentials scoped to the probe bucket."
+  open_url "https://dash.cloudflare.com/?to=/:account/r2/api-tokens"
+  step "Create an API token: 'Object Read & Write', scoped to the probe"
+  step "bucket, TTL is fine at the default."
+  step "Copy the Access Key ID and Secret Access Key it shows ONCE."
+  ask R2_ACCESS_KEY_ID "Access Key ID:"
+  ask_secret R2_SECRET_ACCESS_KEY "Secret Access Key:"
+  write_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+  write_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+  write_env RELAY_URL "https://httpbin.org/post"
+  say ""
+  say "Validating the credentials with a put/get/delete round-trip…"
+  try "$PY" "$DIR/driver.py" r2check
+  pause "R2 check passed?"
+}
+
+# ── 4 ─────────────────────────────────────────────────────────────────────
+stage_vast_instance() {
+  say "Rent ONE On-Demand instance from your SeedVR2 template, in a NON-US"
+  say "region — the ticket wants upload throughput measured from one."
+  open_url "https://cloud.vast.ai/"
+  step "Pick your SeedVR2 template (the one the POC uses — wrapper on 8288)."
+  step "Filter hosts to Europe (planet-earth filter), pick e.g. an RTX 4090."
+  step "Note the WEB_PASSWORD env value on the template — that's the auth"
+  step "token (same as the POC's AuthToken)."
+  step "Rent it On-Demand, then wait for it to boot and the SeedVR2 models"
+  step "to finish downloading (instance logs / first ComfyUI load)."
+  step "On the instance card, open the port mappings (the IP:PORT list) and"
+  step "find the public mapping for container port 8288."
+  ask WRAPPER_URL "Wrapper URL (http://PUBLIC_IP:MAPPED_PORT for 8288):"
+  ask_secret AUTH_TOKEN "WEB_PASSWORD of the instance:"
+  write_env WRAPPER_URL "$WRAPPER_URL"
+  write_env AUTH_TOKEN "$AUTH_TOKEN"
+  INSTANCE_LIVE=1
+  warn "The instance bills until you destroy it (stage 10)."
+}
+
+# ── 5 ─────────────────────────────────────────────────────────────────────
+stage_connectivity() {
+  say "Checking the wrapper answers through the proxy with your token…"
+  try "$PY" "$DIR/driver.py" check
+  pause "Wrapper reachable?"
+}
+
+# ── 6 ─────────────────────────────────────────────────────────────────────
+stage_arm_probe() {
+  say "Uploading the input video + probe script to R2 and presigning URLs…"
+  try "$PY" "$DIR/driver.py" prepare
+  say ""
+  step "Open the instance's Jupyter (the 'Open' button on the instance card),"
+  step "start a Terminal, and paste the ONE-LINE command printed above."
+  step "Wait until it prints 'PROBE READY'."
+  pause "On-instance probe says PROBE READY?"
+}
+
+# ── 7 ─────────────────────────────────────────────────────────────────────
+stage_run_job() {
+  say "Submitting the wrapper job — the video input is a presigned R2 GET URL"
+  say "inside workflow_json (the first thing this probe verifies). Progress"
+  say "then streams below; a 10s clip took ~12 min on the POC's reference GPU."
+  warn "If this fails, prefer Skip over Retry — a retry resubmits the same"
+  warn "job id and could start a second GPU run."
+  try "$PY" "$DIR/driver.py" submit
+  say ""
+  step "Meanwhile the Jupyter terminal shows the on-instance probe: WebSocket"
+  step "watch, relay POSTs, local_path pickup, and the two presigned PUTs"
+  step "(real output + synthetic 300 MB). Wait for 'PROBE DONE' there."
+  pause "On-instance probe printed PROBE DONE?"
+}
+
+# ── 8 ─────────────────────────────────────────────────────────────────────
+stage_collect() {
+  say "Pulling the probe log and the uploaded output back from R2…"
+  try "$PY" "$DIR/driver.py" collect
+  pause
+}
+
+# ── 9 ─────────────────────────────────────────────────────────────────────
+stage_wal_probe() {
+  say "Now the hosting ticket's add-on: a barman-cloud WAL archive → backup →"
+  say "restore round-trip against R2, in a throwaway local Docker postgres:17."
+  note "This one is standalone — it can also be (re-)run on its own later:"
+  note "  bash probes/storage/barman_probe.sh"
+  if ! docker info >/dev/null 2>&1; then
+    warn "Docker isn't running — start Docker Desktop now."
+    pause "Docker started?"
+  fi
+  try bash "$DIR/barman_probe.sh"
+  pause "Did it print BARMAN_PROBE_PASS?"
+}
+
+# ── 10 ────────────────────────────────────────────────────────────────────
+stage_teardown() {
+  warn "Destroy the Vast.ai instance now — it bills until destroyed."
+  open_url "https://cloud.vast.ai/instances/"
+  step "DESTROY (not just stop) the probe instance."
+  if confirm "Instance destroyed?"; then
+    INSTANCE_LIVE=0
+    say "Good."
+  else
+    warn "Remember to destroy it — it keeps billing."
+  fi
+  note "Probe leftovers kept for inspection: R2 objects under in/, out/,"
+  note "probe/ and barman-probe/ in the probe bucket; local results in"
+  note "probes/storage/out/. Bring out/ back to a wayfinder session on"
+  note "ticket #18 — its resolution is written from these files."
+}
 
 banner "Worker-side storage flow live probe (wayfinder ticket #18)"
 
-# ── 1 ─────────────────────────────────────────────────────────────────────
-stage "Local tooling" 3
-say "Setting up a Python venv with boto3 (used only on THIS machine to"
-say "presign R2 URLs — the worker never sees credentials, per ADR 0005)."
-if [[ ! -x "$PY" ]]; then
-  python3 -m venv "$DIR/.venv"
-  "$DIR/.venv/bin/pip" -q install boto3
+if (( START_AT == 1 && LAST_DONE > 0 && LAST_DONE < TOTAL_STAGES )); then
+  say "A previous run completed stage $LAST_DONE of $TOTAL_STAGES."
+  if confirm "Resume from stage $((LAST_DONE + 1))?"; then
+    START_AT=$((LAST_DONE + 1))
+  else
+    note "Starting over — prompts offer your saved values as defaults."
+  fi
 fi
-say "venv ready: $PY"
-if docker info >/dev/null 2>&1; then
-  say "Docker is running — good, the WAL probe (stage 9) needs it."
-else
-  warn "Docker isn't running. Start Docker Desktop before stage 9 (WAL probe)."
-fi
-pause
+# Resuming past the instance stage means one is probably still rented.
+(( START_AT > 4 && START_AT <= TOTAL_STAGES )) && INSTANCE_LIVE=1
 
-# ── 2 ─────────────────────────────────────────────────────────────────────
-stage "Cloudflare R2 — bucket" 5
-say "Create a throwaway probe bucket (separate from any future prod bucket)."
-open_url "https://dash.cloudflare.com/?to=/:account/r2/new"
-step "If R2 isn't enabled yet, enable it (needs a payment method; the free"
-step "tier covers this probe: 10 GB storage, no egress fees)."
-step "Create a bucket named e.g. 'seedvr-probe'. Leave location on"
-step "'Automatic' — that is what production will use (ADR 0004)."
-ask R2_BUCKET "Bucket name you created:"
-step "Copy your Account ID: it's in the R2 overview page's right sidebar"
-step "(also in the dashboard URL after dash.cloudflare.com/)."
-ask R2_ACCOUNT_ID "Cloudflare Account ID:"
-write_env R2_BUCKET "$R2_BUCKET"
-write_env R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
-
-# ── 3 ─────────────────────────────────────────────────────────────────────
-stage "Cloudflare R2 — S3 API token" 5
-say "Create S3-compatible credentials scoped to the probe bucket."
-open_url "https://dash.cloudflare.com/?to=/:account/r2/api-tokens"
-step "Create an API token: 'Object Read & Write', scoped to bucket"
-step "'$R2_BUCKET', TTL is fine at the default."
-step "Copy the Access Key ID and Secret Access Key it shows ONCE."
-ask R2_ACCESS_KEY_ID "Access Key ID:"
-ask_secret R2_SECRET_ACCESS_KEY "Secret Access Key:"
-write_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
-write_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
-write_env RELAY_URL "https://httpbin.org/post"
-say ""
-say "Validating the credentials with a put/get/delete round-trip…"
-"$PY" "$DIR/driver.py" r2check
-pause "R2 check passed?"
-
-# ── 4 ─────────────────────────────────────────────────────────────────────
-stage "Vast.ai — rent the probe instance" 20
-say "Rent ONE On-Demand instance from your SeedVR2 template, in a NON-US"
-say "region — the ticket wants upload throughput measured from one."
-open_url "https://cloud.vast.ai/"
-step "Pick your SeedVR2 template (the one the POC uses — wrapper on 8288)."
-step "Filter hosts to Europe (planet-earth filter), pick e.g. an RTX 4090."
-step "Note the WEB_PASSWORD env value on the template — that's the auth"
-step "token (same as the POC's AuthToken)."
-step "Rent it On-Demand, then wait for it to boot and the SeedVR2 models"
-step "to finish downloading (instance logs / first ComfyUI load)."
-step "On the instance card, open the port mappings (the IP:PORT list) and"
-step "find the public mapping for container port 8288."
-ask WRAPPER_URL "Wrapper URL (http://PUBLIC_IP:MAPPED_PORT for 8288):"
-ask_secret AUTH_TOKEN "WEB_PASSWORD of the instance:"
-write_env WRAPPER_URL "$WRAPPER_URL"
-write_env AUTH_TOKEN "$AUTH_TOKEN"
-warn "The instance bills until you destroy it (stage 10)."
-
-# ── 5 ─────────────────────────────────────────────────────────────────────
-stage "Connectivity check" 2
-say "Checking the wrapper answers through the proxy with your token…"
-"$PY" "$DIR/driver.py" check
-pause "Wrapper reachable?"
-
-# ── 6 ─────────────────────────────────────────────────────────────────────
-stage "Arm the on-instance probe" 5
-say "Uploading the input video + probe script to R2 and presigning URLs…"
-"$PY" "$DIR/driver.py" prepare
-say ""
-step "Open the instance's Jupyter (the 'Open' button on the instance card),"
-step "start a Terminal, and paste the ONE-LINE command printed above."
-step "Wait until it prints 'PROBE READY'."
-pause "On-instance probe says PROBE READY?"
-
-# ── 7 ─────────────────────────────────────────────────────────────────────
-stage "Run the job and watch" 20
-say "Submitting the wrapper job — the video input is a presigned R2 GET URL"
-say "inside workflow_json (the first thing this probe verifies). Progress"
-say "then streams below; a 10s clip took ~12 min on the POC's reference GPU."
-"$PY" "$DIR/driver.py" submit
-say ""
-step "Meanwhile the Jupyter terminal shows the on-instance probe: WebSocket"
-step "watch, relay POSTs, local_path pickup, and the two presigned PUTs"
-step "(real output + synthetic 300 MB). Wait for 'PROBE DONE' there."
-pause "On-instance probe printed PROBE DONE?"
-
-# ── 8 ─────────────────────────────────────────────────────────────────────
-stage "Collect results" 3
-say "Pulling the probe log and the uploaded output back from R2…"
-"$PY" "$DIR/driver.py" collect
-pause
-
-# ── 9 ─────────────────────────────────────────────────────────────────────
-stage "WAL archiving probe (barman-cloud vs R2)" 10
-say "Now the hosting ticket's add-on: a barman-cloud WAL archive → backup →"
-say "restore round-trip against R2, in a throwaway local Docker postgres:17."
-if ! docker info >/dev/null 2>&1; then
-  warn "Docker isn't running — start Docker Desktop now."
-  pause "Docker started?"
-fi
-bash "$DIR/barman_probe.sh"
-pause "Did it print BARMAN_PROBE_PASS?"
-
-# ── 10 ────────────────────────────────────────────────────────────────────
-stage "Teardown" 2
-warn "Destroy the Vast.ai instance now — it bills until destroyed."
-open_url "https://cloud.vast.ai/instances/"
-step "DESTROY (not just stop) the probe instance."
-if confirm "Instance destroyed?"; then
-  say "Good."
-else
-  warn "Remember to destroy it — it keeps billing."
-fi
-note "Probe leftovers kept for inspection: R2 objects under in/, out/,"
-note "probe/ and barman-probe/ in bucket '$R2_BUCKET'; local results in"
-note "probes/storage/out/. Bring out/ back to a wayfinder session on"
-note "ticket #18 — its resolution is written from these files."
+run_stage  1 "Local tooling"                              3 stage_tooling
+run_stage  2 "Cloudflare R2 — bucket"                     5 stage_r2_bucket
+run_stage  3 "Cloudflare R2 — S3 API token"               5 stage_r2_token
+run_stage  4 "Vast.ai — rent the probe instance"         20 stage_vast_instance
+run_stage  5 "Connectivity check"                         2 stage_connectivity
+run_stage  6 "Arm the on-instance probe"                  5 stage_arm_probe
+run_stage  7 "Run the job and watch"                     20 stage_run_job
+run_stage  8 "Collect results"                            3 stage_collect
+run_stage  9 "WAL archiving probe (barman-cloud vs R2)"  10 stage_wal_probe
+run_stage 10 "Teardown"                                   2 stage_teardown
 
 finish

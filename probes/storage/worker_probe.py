@@ -101,6 +101,11 @@ def ws_watch(stop):
     except ImportError:
         r = subprocess.run([sys.executable, "-m", "pip", "install", "--user",
                             "websocket-client"], capture_output=True, text=True)
+        if r.returncode != 0:  # PEP 668 externally-managed environments
+            r = subprocess.run([sys.executable, "-m", "pip", "install",
+                                "--user", "--break-system-packages",
+                                "websocket-client"],
+                               capture_output=True, text=True)
         log("ws_pip_install", rc=r.returncode, err=r.stderr[-200:])
         try:
             import websocket  # noqa: F401
@@ -178,7 +183,13 @@ def wait_for_completion(base, headers):
     log("waiting", request_id=CFG["request_id"])
     print("PROBE READY", flush=True)
     last, last_pct = None, -1
+    deadline = time.monotonic() + 3 * 3600
     while True:
+        if time.monotonic() > deadline:
+            # Give up but keep the evidence: main() still runs the synthetic
+            # PUT and ships the log to R2.
+            log("result_wait_timeout", hours=3)
+            return "timeout", {}
         time.sleep(3)
         try:
             status, body = http("GET", f"{base}/result/{CFG['request_id']}",

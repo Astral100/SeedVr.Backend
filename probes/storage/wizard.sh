@@ -216,6 +216,10 @@ case "${1:-}" in
       exit 64
     fi
     START_AT=$((10#$START_AT))   # 08/09 would otherwise parse as bad octal
+    if (( START_AT < 1 || START_AT > TOTAL_STAGES )); then
+      echo "stage number $START_AT out of range 1-$TOTAL_STAGES" >&2
+      exit 64
+    fi
     ;;
   --fresh)  LAST_DONE=0; printf '0\n' > "$PROGRESS_FILE" ;;
 esac
@@ -238,7 +242,10 @@ trap 'exit 130' INT TERM
 # instead of letting set -e kill the wizard (and its teardown reminder).
 # A skip sets TRY_SKIPPED so run_stage leaves the stage uncheckpointed —
 # its outputs are missing, so a resume must redo it, not sail past it.
+# The first skip also latches CHECKPOINT_LATCHED for the rest of the run:
+# later stages completing must not advance the resume point past the gap.
 TRY_SKIPPED=0
+CHECKPOINT_LATCHED=0
 try() {
   while ! "$@"; do
     warn "step failed: $*"
@@ -265,8 +272,12 @@ run_stage() {
   TRY_SKIPPED=0
   "$fn"
   if (( TRY_SKIPPED )); then
+    CHECKPOINT_LATCHED=1
     warn "a step in this stage was skipped after failing — the stage is NOT"
-    warn "checkpointed, so resuming the wizard will redo it."
+    warn "checkpointed: resuming the wizard restarts from stage $((LAST_DONE + 1))."
+  elif (( CHECKPOINT_LATCHED )); then
+    note "stage done, but not checkpointed — an earlier stage was skipped, so"
+    note "resuming still restarts from stage $((LAST_DONE + 1))."
   else
     LAST_DONE="$n"
     printf '%s\n' "$n" > "$PROGRESS_FILE"
@@ -374,7 +385,8 @@ stage_run_job() {
   # No try() here: a retry would re-POST /generate and could start a second
   # GPU job. On failure the stage still checkpoints (deliberately, unlike
   # try()-skips): redoing THIS stage on resume is the dangerous direction —
-  # 'collect' may still succeed, and --from=7 re-runs it on purpose.
+  # 'collect' may still succeed, and --from=7 re-runs it on purpose. (If an
+  # EARLIER stage was skipped, the checkpoint latch overrides this anyway.)
   if ! "$PY" "$DIR/driver.py" submit; then
     warn "submit/watch failed. No retry is offered — re-running submit could"
     warn "start a second GPU job. Check the instance's Jupyter terminal: if"

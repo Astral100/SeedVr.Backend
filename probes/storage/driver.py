@@ -227,9 +227,17 @@ def cmd_submit(env):
 
 def cmd_collect(env):
     state = json.loads(STATE.read_text())
-    check_presigns_fresh(state)
     s3 = s3_client(env)
     bucket = env["R2_BUCKET"]
+    # Unlike submit, collect never needs a re-prepare on expiry: this side
+    # holds the credentials, so stale GET URLs are re-minted for the SAME
+    # keys the finished job wrote to.
+    if time.time() - state.get("prepared_at", 0) > PRESIGN_SECONDS - 3600:
+        print("stored presigned URLs have expired — minting fresh ones for "
+              "the same keys")
+        state["log_get_url"] = presign(s3, bucket, "GET", state["keys"]["log"])
+        state["output_get_url"] = presign(s3, bucket, "GET",
+                                          state["keys"]["output"])
 
     status, body = http("GET", state["log_get_url"], timeout=60)
     if status != 200:

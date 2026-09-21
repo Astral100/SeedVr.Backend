@@ -69,3 +69,8 @@ The maximum time a job may spend in one state before its timeout action fires. E
 
 **Recovery check**:
 A periodic pass that reads the database, finds every job matching some condition (typically past a state timeout), and applies that state's fix. Safe to run repeatedly — already-fixed jobs match nothing — which is why any combination of failures only ever delays recovery, never loses it.
+
+### Prediction
+
+**Trace**:
+A recording of one real run — every progress signal it produced plus how long it actually took, together with a fingerprint of the machine that ran it. Traces are replayed through prediction logic to score its accuracy against reality; a curated set of them, each covering a distinct situation, forms the regression net for the estimator.

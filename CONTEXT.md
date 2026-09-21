@@ -12,6 +12,14 @@ The fine-grained, backend-only enum stored on a job, recording exactly where it 
 **UI job status** (`UiJobStatus`):
 The coarse, user-facing enum derived from the job state by a single pure mapping — never stored, so the two cannot drift. This is the vocabulary of API responses and the UI (e.g. queued, processing, done). Each job state maps to exactly one UI job status.
 
+### Accounts
+
+**User**:
+A person's account in the product and the owner of everything they create — every job and input file belongs to exactly one user, and every API request acts as exactly one signed-in user. Sign-in itself is handled by the identity provider (Clerk); our database keeps a mirrored user row that the rest of the model references.
+
+**Deletion grace period**:
+The window (default 30 days) after an account-deletion request during which nothing is erased: the user is marked deleted and locked out everywhere, but jobs, files, and the sign-in identity all survive, so support can fully restore the account. Only when the period lapses does the periodic deletion pass erase the user on both sides — our records and stored files, and the identity provider's record.
+
 ### Files
 
 **Input file**:

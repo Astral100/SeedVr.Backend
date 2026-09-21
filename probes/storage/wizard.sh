@@ -244,8 +244,11 @@ trap 'exit 130' INT TERM
 # its outputs are missing, so a resume must redo it, not sail past it.
 # The first skip also latches CHECKPOINT_LATCHED for the rest of the run:
 # later stages completing must not advance the resume point past the gap.
+# CHECKPOINT_FORCE lets one stage override the latch for its own checkpoint
+# (only the submit stage uses it, and only after a real GPU job started).
 TRY_SKIPPED=0
 CHECKPOINT_LATCHED=0
+CHECKPOINT_FORCE=0
 try() {
   while ! "$@"; do
     warn "step failed: $*"
@@ -270,15 +273,27 @@ run_stage() {
   fi
   stage "$title" "$mins"
   TRY_SKIPPED=0
+  CHECKPOINT_FORCE=0
   "$fn"
   if (( TRY_SKIPPED )); then
     CHECKPOINT_LATCHED=1
+    # Clamp the checkpoint below the gap, in memory AND on disk: a --from
+    # re-entry may have left a higher, now-stale number sitting there.
+    if (( LAST_DONE > n - 1 )); then
+      LAST_DONE=$((n - 1))
+      printf '%s\n' "$LAST_DONE" > "$PROGRESS_FILE"
+    fi
     warn "a step in this stage was skipped after failing — the stage is NOT"
     warn "checkpointed: resuming the wizard restarts from stage $((LAST_DONE + 1))."
-  elif (( CHECKPOINT_LATCHED )); then
+  elif (( CHECKPOINT_LATCHED && ! CHECKPOINT_FORCE )); then
     note "stage done, but not checkpointed — an earlier stage was skipped, so"
     note "resuming still restarts from stage $((LAST_DONE + 1))."
   else
+    if (( CHECKPOINT_LATCHED )); then
+      warn "checkpoint advanced past an earlier skipped stage: a real GPU job"
+      warn "was submitted, and a resume must never resubmit it. The skipped"
+      warn "stage(s) stay in the closing summary — redo them via --from=N."
+    fi
     LAST_DONE="$n"
     printf '%s\n' "$n" > "$PROGRESS_FILE"
   fi
@@ -383,11 +398,14 @@ stage_run_job() {
   say "inside workflow_json (the first thing this probe verifies). Progress"
   say "then streams below; a 10s clip took ~12 min on the POC's reference GPU."
   # No try() here: a retry would re-POST /generate and could start a second
-  # GPU job. On failure the stage still checkpoints (deliberately, unlike
-  # try()-skips): redoing THIS stage on resume is the dangerous direction —
-  # 'collect' may still succeed, and --from=7 re-runs it on purpose. (If an
-  # EARLIER stage was skipped, the checkpoint latch overrides this anyway.)
-  if ! "$PY" "$DIR/driver.py" submit; then
+  # GPU job. Checkpointing: a SUCCESSFUL submit forces its checkpoint even
+  # past the latch (a resume must never resubmit a job that really started);
+  # a FAILED submit checkpoints only when no earlier stage was skipped —
+  # redoing this stage on resume stays the dangerous direction, and --from=7
+  # re-runs it on purpose.
+  if "$PY" "$DIR/driver.py" submit; then
+    CHECKPOINT_FORCE=1
+  else
     warn "submit/watch failed. No retry is offered — re-running submit could"
     warn "start a second GPU job. Check the instance's Jupyter terminal: if"
     warn "the job is actually running or done, 'collect' may still succeed."

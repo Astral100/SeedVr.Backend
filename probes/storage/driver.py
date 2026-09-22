@@ -135,9 +135,11 @@ def cmd_prepare(env):
             old = json.loads(STATE.read_text())
         except (ValueError, OSError):
             old = None  # unreadable — treat like a possibly-submitted job
+        if not isinstance(old, dict):
+            old = None  # valid JSON of the wrong shape gets the same gate
         if old is None:
-            print("WARNING: out/state.json exists but is unreadable (likely "
-                  "a crash during a write). It may belong to a job that was "
+            print("WARNING: out/state.json exists but is unreadable or not "
+                  "in the expected format. It may belong to a job that was "
                   "already submitted and could still be running on the "
                   "instance — check the Jupyter terminal / Vast dashboard "
                   "before discarding it.")

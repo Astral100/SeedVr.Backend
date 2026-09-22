@@ -19,6 +19,7 @@ probe.env next to this script (written by wizard.sh).
 
 import hashlib
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -32,6 +33,14 @@ OUT = HERE / "out"
 STATE = OUT / "state.json"
 PRESIGN_SECONDS = 6 * 24 * 3600  # under R2's 7-day presign cap
 SYNTHETIC_MB = 300
+
+
+def save_state(state):
+    # Atomic: a crash mid-write must never leave a truncated state.json —
+    # an unreadable state hides whether a GPU job was already submitted.
+    tmp = STATE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    os.replace(tmp, STATE)
 
 
 def check_presigns_fresh(state):
@@ -122,14 +131,24 @@ def cmd_prepare(env):
     # marked submitted may belong to a job still running on the instance,
     # so discarding it demands an explicit yes.
     if STATE.exists():
-        old = json.loads(STATE.read_text())
-        if old.get("submitted_at"):
+        try:
+            old = json.loads(STATE.read_text())
+        except (ValueError, OSError):
+            old = None  # unreadable — treat like a possibly-submitted job
+        if old is None:
+            print("WARNING: out/state.json exists but is unreadable (likely "
+                  "a crash during a write). It may belong to a job that was "
+                  "already submitted and could still be running on the "
+                  "instance — check the Jupyter terminal / Vast dashboard "
+                  "before discarding it.")
+        elif old.get("submitted_at"):
             print(f"WARNING: the previously prepared job (request_id "
-                  f"{old['request_id']}) was submitted at "
+                  f"{old.get('request_id', '<unknown>')}) was submitted at "
                   f"{old['submitted_at']} and may still be running on the "
                   "instance. Re-preparing discards its tracking here; its "
                   "output stays in R2 under the old keys but 'collect' will "
                   "no longer find it.")
+        if old is None or old.get("submitted_at"):
             try:
                 answer = input("Type 'yes' to discard it and prepare a "
                                "fresh job: ")
@@ -180,7 +199,7 @@ def cmd_prepare(env):
         "log_get_url": presign(s3, bucket, "GET", keys["log"]),
         "output_get_url": presign(s3, bucket, "GET", keys["output"]),
     }
-    STATE.write_text(json.dumps(state, indent=2))
+    save_state(state)
 
     script_url = presign(s3, bucket, "GET", script_key)
     cfg_url = presign(s3, bucket, "GET", cfg_key)
@@ -224,7 +243,7 @@ def cmd_submit(env):
     # Stamp BEFORE polling: from this moment a real GPU job exists, and any
     # later submit against this state must refuse (see the guard above).
     state["submitted_at"] = now()
-    STATE.write_text(json.dumps(state, indent=2))
+    save_state(state)
 
     timeline = [{"t": now(), "event": "submitted", "http": status}]
     last_msg = None

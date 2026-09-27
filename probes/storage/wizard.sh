@@ -46,7 +46,13 @@ banner() {
   printf '%s  You drive the browser; this wizard tells you exactly what to do and\n' "$DIM"
   printf '  captures the values you copy back. Stop any time with Ctrl-C and re-run\n'
   printf '  later — it remembers values already saved.%s\n' "$RESET"
-  pause "Ready to start?"
+  local reply=""
+  printf '  Ready to start? [Y/n] '
+  read -r reply || true
+  if [[ "$reply" =~ ^[Nn] ]]; then
+    printf '  Okay — nothing was started. Run wizard.sh again whenever you are ready.\n'
+    exit 0
+  fi
 }
 
 # stage "Name" <minutes> — clear the screen, then announce a stage and show

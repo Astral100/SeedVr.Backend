@@ -43,11 +43,11 @@ banner() {
   printf '\n%s%s  %s%s\n' "$BOLD" "$BLUE" "$1" "$RESET"
   printf '%s  %s stages · about %s minutes%s\n\n' \
     "$DIM" "$TOTAL_STAGES" "$TOTAL_MINUTES" "$RESET"
-  printf '%s  You drive the browser; this wizard tells you exactly what to do and\n' "$DIM"
+  printf '  You drive the browser; this wizard tells you exactly what to do and\n'
   printf '  captures the values you copy back. Stop any time with Ctrl-C and re-run\n'
-  printf '  later — it remembers values already saved.%s\n' "$RESET"
+  printf '  later — it remembers values already saved.\n'
   local reply=""
-  printf '  Ready to start? [Y/n] '
+  printf '\n  %sReady to start? [Y/n]%s ' "$BOLD" "$RESET"
   read -r reply || true
   if [[ "$reply" =~ ^[Nn] ]]; then
     printf '  Okay — nothing was started. Run wizard.sh again whenever you are ready.\n'

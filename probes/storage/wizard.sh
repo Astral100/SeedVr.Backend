@@ -470,6 +470,13 @@ stage_teardown() {
   note "probe/ and barman-probe/ in the probe bucket; local results in"
   note "probes/storage/out/. Bring out/ back to a wayfinder session on"
   note "ticket #18 — its resolution is written from these files."
+  say ""
+  say "Cleanup is the last part of the process, AFTER that resolution is"
+  say "recorded (the R2 objects are its evidence, so not before):"
+  step "in the #18 session (or by hand): .venv/bin/python driver.py cleanup"
+  step "— it empties the probe bucket and prints the remaining hand steps:"
+  step "delete the empty bucket + revoke the API token in the Cloudflare"
+  step "dashboard, then delete probes/storage/probe.env."
 }
 
 banner "Worker-side storage flow live probe (wayfinder ticket #18)"

@@ -333,9 +333,37 @@ def cmd_collect(env):
           "session to resolve ticket #18")
 
 
+def cmd_cleanup(env):
+    # Post-resolution cleanup: empties the probe bucket. The objects are the
+    # evidence ticket #18's resolution is written from, so this runs only
+    # after that resolution is recorded — and demands the bucket name as an
+    # explicit confirmation, so a stray invocation deletes nothing.
+    bucket = env["R2_BUCKET"]
+    if len(sys.argv) != 3 or sys.argv[2] != bucket:
+        sys.exit(f"cleanup deletes EVERY object in bucket '{bucket}'.\n"
+                 "Run it only once ticket #18's resolution comment is posted;\n"
+                 f"confirm by naming the bucket: driver.py cleanup {bucket}")
+    s3 = s3_client(env)
+    deleted = 0
+    while True:
+        objs = [{"Key": o["Key"]}
+                for o in s3.list_objects_v2(Bucket=bucket,
+                                            MaxKeys=1000).get("Contents", [])]
+        if not objs:
+            break
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": objs})
+        deleted += len(objs)
+    print(f"deleted {deleted} object(s) — bucket '{bucket}' is now empty")
+    print("Finish in the Cloudflare dashboard (the API keys can't do these):")
+    print(f"  1. R2 → delete the now-empty '{bucket}' bucket")
+    print("  2. R2 → API tokens → revoke the probe token")
+    print(f"Then delete {HERE / 'probe.env'} — it holds the revoked keys.")
+
+
 if __name__ == "__main__":
     cmds = {"r2check": cmd_r2check, "check": cmd_check, "prepare": cmd_prepare,
-            "submit": cmd_submit, "collect": cmd_collect}
-    if len(sys.argv) != 2 or sys.argv[1] not in cmds:
+            "submit": cmd_submit, "collect": cmd_collect, "cleanup": cmd_cleanup}
+    if (len(sys.argv) < 2 or sys.argv[1] not in cmds
+            or (sys.argv[1] != "cleanup" and len(sys.argv) != 2)):
         sys.exit(f"usage: driver.py [{'|'.join(cmds)}]")
     cmds[sys.argv[1]](load_env())

@@ -52,3 +52,17 @@ be (re-)run on its own: `bash probes/storage/barman_probe.sh`.
 - `out/` (gitignored) — everything captured: `state.json`,
   `driver-result.json`, `probe-log.json`, `barman-probe.log`, the downloaded
   output. **Bring this directory to a wayfinder session to resolve #18.**
+
+## Cleanup
+
+The last part of the process, once the #18 resolution comment is posted (not
+before — the R2 objects are the evidence it is written from):
+
+1. `.venv/bin/python driver.py cleanup <bucket-name>` — empties the probe
+   bucket (the bucket name doubles as the are-you-sure confirmation).
+2. In the Cloudflare dashboard: delete the now-empty bucket, then revoke the
+   probe API token (R2 → API tokens).
+3. Delete `probe.env` — it holds the now-revoked keys.
+
+The Vast.ai instance is not part of this: the wizard's teardown stage already
+destroys it at the end of the run.

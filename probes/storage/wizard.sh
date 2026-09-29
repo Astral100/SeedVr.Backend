@@ -362,7 +362,7 @@ stage_r2_token() {
   say ""
   say "Validating the credentials with a put/get/delete round-trip…"
   try "$PY" "$DIR/driver.py" r2check
-  pause "R2 check passed?"
+  pause "Confirm the 'R2 OK' line above, then press Enter."
 }
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
@@ -393,7 +393,7 @@ stage_vast_instance() {
 stage_connectivity() {
   say "Checking the wrapper answers through the proxy with your token…"
   try "$PY" "$DIR/driver.py" check
-  pause "Wrapper reachable?"
+  pause "Confirm the 'wrapper reachable' line above, then press Enter."
 }
 
 # ── 6 ─────────────────────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ stage_arm_probe() {
   step "Open the instance's Jupyter (the 'Open' button on the instance card),"
   step "start a Terminal, and paste the ONE-LINE command printed above."
   step "Wait until it prints 'PROBE READY'."
-  pause "On-instance probe says PROBE READY?"
+  pause "Press Enter once the Jupyter terminal prints PROBE READY."
 }
 
 # ── 7 ─────────────────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ stage_run_job() {
   step "Meanwhile the Jupyter terminal shows the on-instance probe: WebSocket"
   step "watch, relay POSTs, local_path pickup, and the two presigned PUTs"
   step "(real output + synthetic 300 MB). Wait for 'PROBE DONE' there."
-  pause "On-instance probe printed PROBE DONE?"
+  pause "Press Enter once the Jupyter terminal prints PROBE DONE."
 }
 
 # ── 8 ─────────────────────────────────────────────────────────────────────
@@ -449,10 +449,10 @@ stage_wal_probe() {
   note "  bash probes/storage/barman_probe.sh"
   if ! docker info >/dev/null 2>&1; then
     warn "Docker isn't running — start Docker Desktop now."
-    pause "Docker started?"
+    pause "Press Enter once Docker is running."
   fi
   try bash "$DIR/barman_probe.sh"
-  pause "Did it print BARMAN_PROBE_PASS?"
+  pause "Confirm BARMAN_PROBE_PASS was printed above, then press Enter."
 }
 
 # ── 10 ────────────────────────────────────────────────────────────────────

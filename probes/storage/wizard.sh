@@ -236,8 +236,12 @@ _on_exit() {
 trap _on_exit EXIT
 trap 'exit 130' INT TERM
 
-# try CMD... — run a probe step; on failure offer retry / skip / abort
+# try CMD... — run a probe step; on failure offer fix / retry / skip / abort
 # instead of letting set -e kill the wizard (and its teardown reminder).
+# A stage may set TRY_FIX to a function that re-asks the values the step
+# depends on (Enter keeps current) — without it, a check failing because of
+# a mistyped value earlier is a dead end: retry re-reads the same probe.env,
+# and a wizard restart resumes past the stage that asked.
 # A skip sets TRY_SKIPPED so run_stage leaves the stage uncheckpointed —
 # its outputs are missing, so a resume must redo it, not sail past it.
 # The first skip also latches CHECKPOINT_LATCHED for the rest of the run:
@@ -245,11 +249,16 @@ trap 'exit 130' INT TERM
 # CHECKPOINT_FORCE lets one stage override the latch for its own checkpoint
 # (only the submit stage uses it, and only after a real GPU job started).
 TRY_SKIPPED=0
+TRY_FIX=""
 CHECKPOINT_LATCHED=0
 CHECKPOINT_FORCE=0
 try() {
   while ! "$@"; do
     warn "step failed: $*"
+    if [[ -n "$TRY_FIX" ]] && confirm "Re-enter the values this step uses, then retry?"; then
+      "$TRY_FIX"
+      continue
+    fi
     if confirm "Retry it?"; then continue; fi
     if confirm "Skip it and carry on with the wizard?"; then
       SKIPPED+=("failed step: $*")
@@ -271,6 +280,7 @@ run_stage() {
   fi
   stage "$title" "$mins"
   TRY_SKIPPED=0
+  TRY_FIX=""
   CHECKPOINT_FORCE=0
   "$fn"
   if (( TRY_SKIPPED )); then
@@ -334,6 +344,16 @@ stage_r2_bucket() {
 }
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
+fix_r2_values() {
+  ask R2_BUCKET "Bucket name you created:"
+  ask R2_ACCOUNT_ID "Cloudflare Account ID:"
+  ask R2_ACCESS_KEY_ID "Access Key ID:"
+  ask R2_SECRET_ACCESS_KEY "Secret Access Key:"
+  write_env R2_BUCKET "$R2_BUCKET"
+  write_env R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
+  write_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+  write_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+}
 stage_r2_token() {
   say "Create S3-compatible credentials scoped to the probe bucket."
   open_url "https://dash.cloudflare.com/?to=/:account/r2/api-tokens"
@@ -347,6 +367,7 @@ stage_r2_token() {
   write_env RELAY_URL "https://httpbin.org/post"
   say ""
   say "Validating the credentials with a put/get/delete round-trip…"
+  TRY_FIX=fix_r2_values
   try "$PY" "$DIR/driver.py" r2check
   pause "Confirm the 'R2 OK' line above, then press Enter."
 }
@@ -376,8 +397,15 @@ stage_vast_instance() {
 }
 
 # ── 5 ─────────────────────────────────────────────────────────────────────
+fix_wrapper_values() {
+  ask WRAPPER_URL "Wrapper URL (http://PUBLIC_IP:MAPPED_PORT for 8288):"
+  ask AUTH_TOKEN "WEB_PASSWORD of the instance:"
+  write_env WRAPPER_URL "$WRAPPER_URL"
+  write_env AUTH_TOKEN "$AUTH_TOKEN"
+}
 stage_connectivity() {
   say "Checking the wrapper answers through the proxy with your token…"
+  TRY_FIX=fix_wrapper_values
   try "$PY" "$DIR/driver.py" check
   pause "Confirm the 'wrapper reachable' line above, then press Enter."
 }

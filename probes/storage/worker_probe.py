@@ -225,6 +225,11 @@ def wait_for_completion(base, headers):
                     relay(pct, "result_poll")
             except (ValueError, IndexError):
                 pass
+        if status == 404:
+            # Pre-submission: the wrapper answers an unknown request id with
+            # HTTP 404 and a body saying status "failed" — that means "no such
+            # job yet", not a failed job. Keep waiting for the submit.
+            continue
         if st in ("completed", "failed"):
             return st, res
 

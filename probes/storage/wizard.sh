@@ -114,7 +114,8 @@ _existing() {
 }
 
 # ask KEY "Prompt" — read a value into $KEY. Offers the existing .env value as
-# a default on re-runs (Enter keeps it). Visible input (non-secret).
+# a default on re-runs (Enter keeps it). Input stays visible on purpose,
+# secrets included — the human must be able to see what actually pasted.
 ask() {
   local key="$1" prompt="$2" current input
   current=$(_existing "$key" || true)
@@ -124,21 +125,6 @@ ask() {
     printf '  %s%s%s ' "$BOLD" "$prompt" "$RESET"
   fi
   read -r input || true
-  [[ -z "$input" && -n "$current" ]] && input="$current"
-  printf -v "$key" '%s' "$input"
-}
-
-# ask_secret KEY "Prompt" — like ask, but input is hidden.
-ask_secret() {
-  local key="$1" prompt="$2" current input
-  current=$(_existing "$key" || true)
-  if [[ -n "$current" ]]; then
-    printf '  %s%s%s %s[Enter keeps current]%s ' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
-  else
-    printf '  %s%s%s ' "$BOLD" "$prompt" "$RESET"
-  fi
-  read -rs input || true
-  printf '\n'
   [[ -z "$input" && -n "$current" ]] && input="$current"
   printf -v "$key" '%s' "$input"
 }
@@ -355,7 +341,7 @@ stage_r2_token() {
   step "bucket, TTL is fine at the default."
   step "Copy the Access Key ID and Secret Access Key it shows ONCE."
   ask R2_ACCESS_KEY_ID "Access Key ID:"
-  ask_secret R2_SECRET_ACCESS_KEY "Secret Access Key:"
+  ask R2_SECRET_ACCESS_KEY "Secret Access Key:"
   write_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
   write_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
   write_env RELAY_URL "https://httpbin.org/post"
@@ -383,7 +369,7 @@ stage_vast_instance() {
   step "On the instance card, open the port mappings (the IP:PORT list) and"
   step "find the public mapping for container port 8288."
   ask WRAPPER_URL "Wrapper URL (http://PUBLIC_IP:MAPPED_PORT for 8288):"
-  ask_secret AUTH_TOKEN "WEB_PASSWORD of the instance:"
+  ask AUTH_TOKEN "WEB_PASSWORD of the instance:"
   write_env WRAPPER_URL "$WRAPPER_URL"
   write_env AUTH_TOKEN "$AUTH_TOKEN"
   warn "The instance bills until you destroy it (stage 10)."

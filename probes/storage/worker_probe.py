@@ -23,9 +23,11 @@ best-effort `pip install websocket-client` for the WS watch.
 """
 
 import hashlib
+import importlib
 import io
 import json
 import os
+import site
 import subprocess
 import sys
 import threading
@@ -95,11 +97,20 @@ def relay(pct, source):
                                    "error": str(e)})
 
 
-def ws_watch(stop):
+def _ws_importable():
+    importlib.invalidate_caches()
     try:
         import websocket  # noqa: F401
+        return True
     except ImportError:
-        r = subprocess.run([sys.executable, "-m", "pip", "install", "--user",
+        return False
+
+
+def ws_watch(stop):
+    if not _ws_importable():
+        # Plain install first: conda images leave the --user site dir off
+        # sys.path, so a --user install "succeeds" yet stays unimportable.
+        r = subprocess.run([sys.executable, "-m", "pip", "install",
                             "websocket-client"], capture_output=True, text=True)
         if r.returncode != 0:  # PEP 668 externally-managed environments
             r = subprocess.run([sys.executable, "-m", "pip", "install",
@@ -107,9 +118,12 @@ def ws_watch(stop):
                                 "websocket-client"],
                                capture_output=True, text=True)
         log("ws_pip_install", rc=r.returncode, err=r.stderr[-200:])
-        try:
-            import websocket  # noqa: F401
-        except ImportError:
+        if not _ws_importable():
+            # A --user install may sit in a site dir the interpreter skips.
+            user_site = site.getusersitepackages()
+            if user_site not in sys.path:
+                sys.path.append(user_site)
+        if not _ws_importable():
             log("ws_watch", fatal="websocket-client unavailable — WS check skipped")
             return
     import websocket

@@ -53,13 +53,25 @@ A GPU instance recruited from the Vast.ai marketplace that processes exactly one
 The minimum number of fully provisioned, ready workers kept rented even while idle so a job starts without provisioning delay; a replacement is recruited as soon as a warm worker takes a job.
 
 **Dispatcher**:
-The seam through which a job reaches GPU capacity. Exactly one dispatcher is active; implementations (serverless endpoint, self-managed pool) are interchangeable behind it because the job contract is identical.
+The seam through which a job reaches GPU capacity. Exactly one dispatcher is active; implementations (self-managed pool, serverless endpoint) are interchangeable behind it because the job contract is identical.
+
+**Provisioner**:
+The background service that runs the worker pool: it searches the GPU marketplace, rents instances with the image variant the situation calls for, admits them through the admission test, keeps the warm floor filled, and retires idle, failed or superseded workers.
+
+**Admission test**:
+The checks a freshly rented worker must pass before it may take any job: the readiness gate (ComfyUI answering, models present, enough free GPU memory) plus a timed mini-render that screens out too-slow machines. A worker that fails is destroyed and its machine remembered as bad.
 
 **Attempt**:
 One delivery of a job to a worker. A job may take several attempts before it succeeds or is abandoned; each attempt has its own identity, and anything a worker reports is tied to the attempt that produced it, so a superseded attempt can never speak for the current one.
 
 **Worker agent**:
 The program of ours bundled into the worker image alongside ComfyUI and the wrapper. It is the worker's voice: it reports heartbeats, progress and completion back to the backend, uploads the finished output to storage, and streams the worker's logs to the telemetry box.
+
+**Wrapper**:
+The third-party HTTP service inside the worker image that drives ComfyUI: it accepts a workflow, runs it as a request, and reports status and results. Used stock — our code talks to it but never modifies it.
+
+**Worker image**:
+The packaged recipe every worker starts from: ComfyUI with the SeedVR2 nodes, the wrapper, the worker agent, and a chosen set of baked-in model files. Variants differ only in which model files they carry — the full image carries every shipped file, a single-model image carries one model's.
 
 **Heartbeat**:
 The worker agent's periodic "still alive" signal, sent independently of job progress. Heartbeat silence — not progress silence — is what marks a worker as stalled; a job may legitimately report no progress for long stretches while heartbeats continue. Silence only counts while the backend was listening: the stall clock runs from the later of the last heard heartbeat and the moment the backend started listening.

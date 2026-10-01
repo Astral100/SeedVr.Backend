@@ -56,10 +56,19 @@ The minimum number of fully provisioned, ready workers kept rented even while id
 The seam through which a job reaches GPU capacity. Exactly one dispatcher is active; implementations (self-managed pool, serverless endpoint) are interchangeable behind it because the job contract is identical.
 
 **Provisioner**:
-The background service that runs the worker pool: it searches the GPU marketplace, rents instances with the image variant the situation calls for, admits them through the admission test, keeps the warm floor filled, and retires idle, failed or superseded workers.
+The background service that runs the worker pool: it keeps the warm floor filled, rents on dispatch's signal when a job finds no free worker, retires idle or outdated workers, runs the scouting pass, and reconciles the account's instance list with the worker table — adopting manually rented instances that carry our image.
+
+**Worker state** (`WorkerState`):
+The enum stored on a worker row recording what the worker is doing: `Provisioning` (instance created or being re-imaged; booting and downloading), `Preparing` (agent answering; readiness gate running), `Ready`, `Processing` (running one job attempt), `Updating` (swapping in a new agent binary), `Destroyed` (terminal; the row stays as history with a death reason). Plans about a worker's future — such as needing a re-image — are data or derived comparisons, never states.
 
 **Admission test**:
-The checks a freshly rented worker must pass before it may take any job: the readiness gate (ComfyUI answering, models present, enough free GPU memory) plus a timed mini-render that screens out too-slow machines. A worker that fails is destroyed and its machine remembered as bad.
+The checks a freshly provisioned worker must pass before it may take any job: the readiness gate — ComfyUI answering, model files visible, enough free GPU memory, empty queue. There is no speed test; a worker that fails after remedies and patience is destroyed and its machine remembered as bad.
+
+**Machine ledger**:
+The permanent per-machine record, keyed by the marketplace's machine id and outliving any single rental: hardware fingerprint, measured download and boot speeds, job outcomes, one continuously recomputed quality score, and ban bookkeeping for bad machines. Offer selection reads it to prefer known good machines and exclude banned ones.
+
+**Scouting pass**:
+The provisioner's quiet-time, budget-capped routine that rents and tests candidate machines — untried cheap offers and known machines with stale scores — to keep the machine ledger fresh and replace the worst floor machine when a candidate beats it by a configured margin. Its intensity derives from the pool configuration and scales with the warm floor.
 
 **Attempt**:
 One delivery of a job to a worker. A job may take several attempts before it succeeds or is abandoned; each attempt has its own identity, and anything a worker reports is tied to the attempt that produced it, so a superseded attempt can never speak for the current one.

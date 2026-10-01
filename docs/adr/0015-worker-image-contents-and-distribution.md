@@ -13,3 +13,5 @@ Distribution: a self-hosted CNCF Distribution (registry:3) on the existing Hetzn
 - Managed cloud registries (Google Artifact Registry ~$4.80, Azure ~$3.48 per 40 GB pull). Rejected — per-pull download cost scales with success (~$350–480/mo at 100 pulls) against R2's $0.
 - Split-and-join of oversized files to stay under GHCR's cap. Rejected — permanent chunking machinery in the build plus 1–3 minutes at every worker start, and the EU tail remains.
 - Ship fp8-only or fp16-only. Rejected for launch — fp8 carries a documented open seam defect (RoPE quantization), fp16 pays the 1.5–2× block-swap slowdown on 24 GB cards; shipping both keeps the choice a preset/config matter until our own A/B decides.
+
+_Amended 2026-10-01 by ADR 0016 (provisioner ticket #23): rollout is two-tier rather than pure turnover — agent-only releases hot-swap the single-file binary in place, and image releases re-image existing instances in place via Vast's update+recycle (destroy-and-re-rent survives only as a fallback). Consequence: the registry's pull credentials must be long-lived, since Vast cannot change registry credentials on an existing instance._

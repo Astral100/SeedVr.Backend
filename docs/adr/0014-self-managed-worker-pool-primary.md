@@ -12,3 +12,5 @@ Why the reversal (2026-09-30, worker-image ticket #17): designing the image agai
 - Serverless mixed fleet (full endpoint holding the warm floor + per-model burst endpoints). Rejected — one endpoint per image variant (seven with both precisions shipped), each separately created, tuned and monitored, plus real chooser logic in the dispatcher anyway.
 - Self-managed pool primary (chosen) — full control of machine selection, image-per-rental and admission. The scaling logic stays small because prior decisions (one job per worker, warm floor of two, Postgres queue) already removed everything hard.
 - Hybrid with both paths built. Rejected again per ADR 0003 — doubles the build for no launch benefit.
+
+_Amended 2026-10-01 by ADR 0016 (provisioner ticket #23): the admission test's timed mini-render is dropped — admission is the readiness gate alone, and machine speed is predicted from hardware fingerprints plus accumulated job history instead of measured. The provisioner's full design (worker lifecycle, machine ledger, scouting, two-tier updates) lives in ADR 0016._

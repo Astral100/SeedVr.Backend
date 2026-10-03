@@ -1,6 +1,6 @@
 # The product is named Vexel
 
-Decided on the code-layout ticket (#20, 2026-10-02). The product — this whole monorepo (ADR 0006) — is **Vexel**: repository `Vexel`, solution `Vexel.sln`, every project `Vexel.*`, website `vexel.media`. The repository rename and the local move (contents one level up to `D:\Programming\PixUp`, Claude project-context re-keyed for continuity) run as one bundled activity right after #20 closes.
+Decided on the code-layout ticket (#20, 2026-10-02). The product — this whole monorepo (ADR 0006) — is **Vexel**: repository `Vexel`, solution `Vexel.sln`, every project `Vexel.*`, website `vexel.media`. The repository rename and the local move (the repo folder relocated to `D:\Programming\Vexel`, retiring the old `PixUp\SeedVr.Backend` nesting — amended 2026-10-03: the parent folder carried the old product name and held nothing else; Claude project-context re-keyed for continuity) run as one bundled activity right after #20 closes.
 
 The name is an invented brand, deliberately not descriptive of upscaling. The direction was chosen on the go-to-market economics research ([`docs/research/naming-gtm-economics.md`](../research/naming-gtm-economics.md)): disclosed revenue in this market sits entirely on the brand side (Magnific, Topaz), keyword-domain sites show traffic but no money on pricing that doesn't survive per-minute GPU video costs, and the one-brand-many-offerings roadmap rules out keyword names (one domain per keyword, 6–12 months of SEO each). Keyword-style landing pages inside the brand site do the traffic work instead.
 
